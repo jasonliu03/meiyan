@@ -22,6 +22,9 @@ const int POINTS_NUM = 68;
 dlib::frontal_face_detector dlibSvmFaceDetector;
 dlib::shape_predictor dlibSpFaceLandmark;
 
+std::vector<dlib::rectangle> dlibRectsFaces;
+std::vector<dlib::full_object_detection> dlibDetsShapes;
+
 // ---------------------------------------------------------------------------
 
 cv::Vec<unsigned char, 3> BilinearInsert(Mat src, int ux, int uy){
@@ -110,16 +113,75 @@ Mat faceLift(Mat src, float change){
 
         // 4-6 points
         float r_left = sqrt((left_landmark.x-left_landmark_down.x)*(left_landmark.x-left_landmark_down.x)+
-                                 (left_landmark.y - left_landmark_down.y) * (left_landmark.y - left_landmark_down.y));
+                            (left_landmark.y - left_landmark_down.y) * (left_landmark.y - left_landmark_down.y));
 
         // 14-16 points
         float r_right=sqrt((right_landmark.x-right_landmark_down.x)*(right_landmark.x-right_landmark_down.x)+
-                          (right_landmark.y -right_landmark_down.y) * (right_landmark.y -right_landmark_down.y));
+                           (right_landmark.y -right_landmark_down.y) * (right_landmark.y -right_landmark_down.y));
         //
         //瘦左边脸
         thin_image = localTranslationWarp(src,left_landmark.x,left_landmark.y,endPt.x,endPt.y,r_left, change);
         //瘦右边脸
         thin_image = localTranslationWarp(thin_image, right_landmark.x, right_landmark.y, endPt.x,endPt.y, r_right, change);
+    }
+
+    return thin_image;
+}
+
+//eye
+Mat localTranslationWarp_eyeScale(Mat srcImg, float startX, float startY, float endX, float endY, float radius, float change){
+    float ddradius = float(radius*radius);
+    Mat copyImg = Mat::zeros(srcImg.rows, srcImg.cols, CV_8UC3);
+    srcImg.copyTo(copyImg);
+    int H = srcImg.rows;
+    int W = srcImg.cols;
+    int C = srcImg.channels();
+    float PtCenterX = 0;
+    float PtCenterY = 0;
+    PtCenterX = (startX+endX)/2;
+    PtCenterY = (startY+endY)/2;
+    for (int i = 0; i < W; i++){
+        for (int j = 0; j < H; j++){
+            int offsetX = i - PtCenterX;
+            int offsetY = j - PtCenterY;
+            if(fabs(i-PtCenterX)>radius and fabs(j-PtCenterY)>radius) continue;
+            float distance = (i-PtCenterX)*(i-PtCenterX)+(j-PtCenterY)*(j-PtCenterY);
+            if(distance < ddradius){
+
+                float ScaleFactor = 1 - distance/ddradius;
+                ScaleFactor = 1 - change / 500 * ScaleFactor;
+                int UX = PtCenterX + offsetX * ScaleFactor;
+                int UY = PtCenterY + offsetY * ScaleFactor;
+
+                cv::Vec<unsigned char, 3> value = BilinearInsert(srcImg, UX, UY);
+                copyImg.at<Vec3b>(j, i) = value;
+            }
+        }
+    }
+    return copyImg;
+}
+
+
+Mat eyeScale(Mat src, float change){
+    Mat thin_image = Mat::zeros(src.rows, src.cols, CV_8UC3);
+    if(dlibDetsShapes.empty()){
+        return src;
+    }
+
+    for(int i=0; i<dlibDetsShapes.size(); i++){
+        Point2f left_landmark = Point2f(dlibDetsShapes[i].part(36).x(), dlibDetsShapes[i].part(36).y());
+        Point2f left_landmark_down = Point2f(dlibDetsShapes[i].part(39).x(), dlibDetsShapes[i].part(39).y());
+        Point2f right_landmark = Point2f(dlibDetsShapes[i].part(42).x(), dlibDetsShapes[i].part(42).y());
+        Point2f right_landmark_down = Point2f(dlibDetsShapes[i].part(45).x(), dlibDetsShapes[i].part(45).y());
+
+        //radius
+        float r_left = sqrt((left_landmark.x-left_landmark_down.x)*(left_landmark.x-left_landmark_down.x)+
+                            (left_landmark.y - left_landmark_down.y) * (left_landmark.y - left_landmark_down.y))/2;
+        float r_right = sqrt((right_landmark.x-right_landmark_down.x)*(right_landmark.x-right_landmark_down.x)+
+                            (right_landmark.y - right_landmark_down.y) * (right_landmark.y - right_landmark_down.y))/2;
+        //eyes
+        thin_image = localTranslationWarp_eyeScale(src,left_landmark.x,left_landmark.y,left_landmark_down.x,left_landmark_down.y,r_left, change);
+        thin_image = localTranslationWarp_eyeScale(thin_image,right_landmark.x,right_landmark.y,right_landmark_down.x,right_landmark_down.y,r_right, change);
     }
     return thin_image;
 }
@@ -135,8 +197,6 @@ int main(int argc, char** argv)
             filename = argv[1];
             change = atof(argv[2]);
         }
-        std::vector<dlib::rectangle> dlibRectsFaces;
-        std::vector<dlib::full_object_detection> dlibDetsShapes;
 
         cv::Mat cvImgFrame;
         cv::Mat cvImgFrameGray;
@@ -150,10 +210,12 @@ int main(int argc, char** argv)
         cv::namedWindow("src", cv::WINDOW_AUTOSIZE);
         cv::imshow("src", cvImgFrame);
 
+        dlibDetsShapes = landmark_dec_dlib_fun(cvImgFrame);
+
         clock_t clkBegin;
         clock_t clkEnd;
         clkBegin = clock();
-        Mat rstImg = faceLift(cvImgFrame, change);
+        Mat rstImg = eyeScale(cvImgFrame, change);
         clkEnd = clock();
         cout << "time:" << clkEnd-clkBegin << endl;
 

@@ -1,0 +1,1 @@
+./meiyan.exe test.jpg 50
