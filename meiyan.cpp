@@ -86,8 +86,8 @@ Mat localTranslationWarp(Mat srcImg, float startX, float startY, float endX, flo
                 float ratio = (ddradius-distance)/(ddradius-distance+ddmc);
                 ratio = ratio*ratio;
 
-                int UX = i-change*ratio*(endX-startX);
-                int UY = j-change*ratio*(endY-startY);
+                int UX = i-change/100*ratio*(endX-startX);
+                int UY = j-change/100*ratio*(endY-startY);
 
                 cv::Vec<unsigned char, 3> value = BilinearInsert(srcImg, UX, UY);
                 copyImg.at<Vec3b>(j, i) = value;
@@ -97,9 +97,8 @@ Mat localTranslationWarp(Mat srcImg, float startX, float startY, float endX, flo
     return copyImg;
 }
 
+// face lift
 Mat faceLift(Mat src, float change){
-    std::vector<dlib::full_object_detection> dlibDetsShapes;
-    dlibDetsShapes = landmark_dec_dlib_fun(src);
     Mat thin_image = Mat::zeros(src.rows, src.cols, CV_8UC3);
     if(dlibDetsShapes.empty()){
         return src;
@@ -122,6 +121,34 @@ Mat faceLift(Mat src, float change){
         //瘦左边脸
         thin_image = localTranslationWarp(src,left_landmark.x,left_landmark.y,endPt.x,endPt.y,r_left, change);
         //瘦右边脸
+        thin_image = localTranslationWarp(thin_image, right_landmark.x, right_landmark.y, endPt.x,endPt.y, r_right, change);
+    }
+
+    return thin_image;
+}
+
+// nose lift
+Mat noseLift(Mat src, float change){
+    Mat thin_image = Mat::zeros(src.rows, src.cols, CV_8UC3);
+    if(dlibDetsShapes.empty()){
+        return src;
+    }
+    for(int i=0; i<dlibDetsShapes.size(); i++){
+        Point2f left_landmark = Point2f(dlibDetsShapes[i].part(39).x(), dlibDetsShapes[i].part(30).y());
+        Point2f left_landmark_down = Point2f(dlibDetsShapes[i].part(32).x(), dlibDetsShapes[i].part(32).y());
+        Point2f right_landmark = Point2f(dlibDetsShapes[i].part(42).x(), dlibDetsShapes[i].part(30).y());
+        Point2f right_landmark_down = Point2f(dlibDetsShapes[i].part(34).x(), dlibDetsShapes[i].part(34).y());
+        Point2f endPt = Point2f(dlibDetsShapes[i].part(30).x(), dlibDetsShapes[i].part(30).y());
+
+        float r_left = sqrt((left_landmark.x-left_landmark_down.x)*(left_landmark.x-left_landmark_down.x)+
+                            (left_landmark.y - left_landmark_down.y) * (left_landmark.y - left_landmark_down.y));
+
+        float r_right=sqrt((right_landmark.x-right_landmark_down.x)*(right_landmark.x-right_landmark_down.x)+
+                           (right_landmark.y -right_landmark_down.y) * (right_landmark.y -right_landmark_down.y));
+
+        //left nose
+        thin_image = localTranslationWarp(src,left_landmark.x,left_landmark.y,endPt.x,endPt.y,r_left, change);
+        //right nose
         thin_image = localTranslationWarp(thin_image, right_landmark.x, right_landmark.y, endPt.x,endPt.y, r_right, change);
     }
 
@@ -169,8 +196,8 @@ Mat eyeScale(Mat src, float change){
     }
 
     for(int i=0; i<dlibDetsShapes.size(); i++){
-        Point2f left_landmark = Point2f(dlibDetsShapes[i].part(36).x(), dlibDetsShapes[i].part(36).y());
-        Point2f left_landmark_down = Point2f(dlibDetsShapes[i].part(39).x(), dlibDetsShapes[i].part(39).y());
+        Point2f left_landmark = Point2f(dlibDetsShapes[i].part(29).x(), dlibDetsShapes[i].part(29).y());
+        Point2f left_landmark_down = Point2f(dlibDetsShapes[i].part(33).x(), dlibDetsShapes[i].part(33).y());
         Point2f right_landmark = Point2f(dlibDetsShapes[i].part(42).x(), dlibDetsShapes[i].part(42).y());
         Point2f right_landmark_down = Point2f(dlibDetsShapes[i].part(45).x(), dlibDetsShapes[i].part(45).y());
 
@@ -215,7 +242,9 @@ int main(int argc, char** argv)
         clock_t clkBegin;
         clock_t clkEnd;
         clkBegin = clock();
-        Mat rstImg = eyeScale(cvImgFrame, change);
+//        Mat rstImg = eyeScale(cvImgFrame, change);
+//        Mat rstImg = faceLift(cvImgFrame, change);
+        Mat rstImg = noseLift(cvImgFrame, change);
         clkEnd = clock();
         cout << "time:" << clkEnd-clkBegin << endl;
 
